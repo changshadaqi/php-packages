@@ -1,0 +1,57 @@
+{
+    "name": "yousheng/laravel-dev-helper",
+    "version": "1.1.0",
+    "description": "A Laravel development helper component",
+    "authors": [
+        {
+            "name": "daqi",
+            "email": "2922800186@qq.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Yousheng\\LaravelDevHelper\\": "src/"
+        },
+        "files": [
+            "src/debug.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Yousheng\\LaravelDevHelper\\Console\\Tests\\": "tests/"
+        }
+    },
+    "require": {
+        "php": "^8.3",
+        "ext-mbstring": "*",
+        "illuminate/console": "^13.0",
+        "illuminate/contracts": "^13.0",
+        "illuminate/database": "^13.0",
+        "illuminate/filesystem": "^13.0",
+        "illuminate/support": "^13.0",
+        "symfony/console": "^7.4 || ^8.0",
+        "symfony/var-dumper": "^7.4 || ^8.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^11.3",
+        "phpunit/phpunit": "^12.5"
+    },
+    "suggest": {
+        "laracasts/generators": "可选：安装并注册后 make:migration:json 优先使用其 make:migration:schema / make:migration:pivot",
+        "laravel/nova": "可选：使用 yousheng:nova 命令或 --nova 选项生成 Nova 资源时需要"
+    },
+    "scripts": {
+        "test": "@php vendor/phpunit/phpunit/phpunit"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Yousheng\\LaravelDevHelper\\HelperServiceProvider"
+            ],
+            "aliases": {
+                "Help": "Yousheng\\LaravelDevHelper\\Facades\\Help"
+            }
+        }
+    },
+    "license": "MIT"
+}

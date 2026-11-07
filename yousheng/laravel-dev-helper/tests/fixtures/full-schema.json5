@@ -1,0 +1,263 @@
+{
+  /*
+   * 这是一个“配置参考”文件，不是一张可以直接 migrate 的业务表。
+   * 为了展示所有类型/修饰符，部分示例不能同时出现在同一张表里：
+   * - 一张表只能有一个主键/自增列（primary_key_types 仅作类型参考）
+   * - after/first/change/using 等是修改表时使用的修饰符
+   * - geometry/vector/tsvector 等类型需要对应数据库支持
+   * 实际项目请按需挑选，不要照搬整张表。
+   */
+
+  roles: {
+    table: 'comment(角色表):engine(InnoDB):charset(utf8mb4):collation(utf8mb4_unicode_ci):index(name):unique(code|roles_code_unique)',
+    id: 'id',
+    code: 'string(20)',
+    name: 'string(50)',
+    description: 'text:nullable',
+  },
+
+  users: {
+    table: 'comment(用户表):index(name|users_name_index):constraint(roles|id|role_id|cascade|set null|users_role_id_foreign):softDeletes',
+    id: 'id',
+    role_id: 'unsignedBigInteger:nullable',
+    name: "string(50):comment('用户名')",
+    email: 'string(255):unique',
+    password: 'string(255)',
+  },
+
+  categories: {
+    table: 'comment(分类表):unique(slug|categories_slug_unique):constraint(categories|id|parent_id|set null|restrict|categories_parent_id_foreign)',
+    id: 'id',
+    parent_id: 'unsignedBigInteger:nullable',
+    name: 'string(50)',
+    slug: 'string(80)',
+  },
+
+  posts: {
+    table: 'comment(文章表):index(title):unique(slug):constraint(users|id|user_id|cascade|restrict):constraint(categories|id|category_id|set null|restrict):softDeletes',
+    id: 'id',
+    user_id: 'unsignedBigInteger',
+    category_id: 'unsignedBigInteger:nullable',
+    title: 'string(200)',
+    slug: 'string(200)',
+    body: 'longText:nullable',
+    status: "enum('draft','published'):default('draft'):index",
+    views: 'unsignedInteger:default(0)',
+  },
+
+  tags: {
+    table: 'comment(标签表):unique(slug)',
+    id: 'id',
+    name: 'string(50)',
+    slug: 'string(80)',
+  },
+
+  post_tag: {
+    table: 'comment(文章标签中间表):primary(post_id,tag_id):constraint(posts|id|post_id|cascade|cascade):constraint(tags|id|tag_id|cascade|cascade):timestamps(false)',
+    post_id: 'unsignedBigInteger',
+    tag_id: 'unsignedBigInteger',
+  },
+
+  comments: {
+    table: 'comment(评论表):index(post_id):constraint(posts|id|post_id|cascade|cascade):constraint(users|id|user_id|set null|restrict)',
+    id: 'id',
+    post_id: 'unsignedBigInteger',
+    user_id: 'unsignedBigInteger:nullable',
+    body: 'text',
+  },
+
+  // ---------------------------------------------------------------
+  // 所有普通列类型（不含主键自增、外键列、morph、时间戳宏）
+  // ---------------------------------------------------------------
+  all_scalar_types: {
+    table: 'comment(所有普通列类型参考):timestamps(false)',
+    type_big_integer: 'bigInteger',
+    type_binary: 'binary',
+    type_boolean: 'boolean',
+    type_char: 'char(10)',
+    type_date: 'date',
+    type_date_time: 'dateTime',
+    type_date_time_tz: 'dateTimeTz',
+    type_decimal: 'decimal(10,2)',
+    type_double: 'double(8,2)',
+    type_enum: "enum('a','b')",
+    type_float: 'float(8,2)',
+    type_geography: 'geography',
+    type_geometry: 'geometry',
+    type_integer: 'integer',
+    type_ip_address: 'ipAddress',
+    type_json: 'json',
+    type_jsonb: 'jsonb',
+    type_long_text: 'longText',
+    type_mac_address: 'macAddress',
+    type_medium_integer: 'mediumInteger',
+    type_medium_text: 'mediumText',
+    type_set: "set('a','b')",
+    type_small_integer: 'smallInteger',
+    type_string: 'string(255)',
+    type_text: 'text',
+    type_time: 'time',
+    type_time_tz: 'timeTz',
+    type_timestamp: 'timestamp',
+    type_timestamp_tz: 'timestampTz',
+    type_tiny_integer: 'tinyInteger',
+    type_tiny_text: 'tinyText',
+    type_tsvector: 'tsvector',
+    type_unsigned_big_integer: 'unsignedBigInteger',
+    type_unsigned_integer: 'unsignedInteger',
+    type_unsigned_medium_integer: 'unsignedMediumInteger',
+    type_unsigned_small_integer: 'unsignedSmallInteger',
+    type_unsigned_tiny_integer: 'unsignedTinyInteger',
+    type_ulid: 'ulid',
+    type_uuid: 'uuid',
+    type_vector: 'vector(3)',
+    type_year: 'year',
+  },
+
+  // ---------------------------------------------------------------
+  // 主键/自增类型：实际一张表只能选一个
+  // ---------------------------------------------------------------
+  primary_key_types: {
+    table: 'comment(主键与自增类型参考，实际只能选一个):timestamps(false)',
+    id: 'id',
+    increments_id: 'increments',
+    big_increments_id: 'bigIncrements',
+    medium_increments_id: 'mediumIncrements',
+    small_increments_id: 'smallIncrements',
+    tiny_increments_id: 'tinyIncrements',
+  },
+
+  // 外键列类型（不自动加约束，约束请写在 table 的 constraint 中）
+  foreign_id_types: {
+    table: 'comment(外键列类型参考):timestamps(false)',
+    foreign_id: 'foreignId',
+    foreign_ulid: 'foreignUlid',
+    foreign_uuid: 'foreignUuid',
+  },
+
+  // 多态类型
+  morph_types: {
+    table: 'comment(多态类型参考):timestamps(false)',
+    taggable: 'morphs',
+    nullable_taggable: 'nullableMorphs',
+    numeric_taggable: 'numericMorphs',
+    nullable_numeric_taggable: 'nullableNumericMorphs',
+    uuid_taggable: 'uuidMorphs',
+    nullable_uuid_taggable: 'nullableUuidMorphs',
+    ulid_taggable: 'ulidMorphs',
+    nullable_ulid_taggable: 'nullableUlidMorphs',
+  },
+
+  // 时间戳/软删除宏
+  timestamp_types: {
+    table: 'comment(时间戳与软删除宏参考):timestamps(false)',
+    timestamps: 'timestamps',
+    timestamps_tz: 'timestampsTz',
+    nullable_timestamps: 'nullableTimestamps',
+    nullable_timestamps_tz: 'nullableTimestampsTz',
+    remember_token: 'rememberToken',
+    deleted_at: 'softDeletes',
+    deleted_at_tz: 'softDeletesTz',
+    deleted_at_datetime: 'softDeletesDatetime',
+  },
+
+  // ---------------------------------------------------------------
+  // 所有列修饰符
+  // ---------------------------------------------------------------
+  modifier_common: {
+    table: 'comment(常用列修饰符):timestamps(false)',
+    nullable_column: 'string:nullable',
+    default_column: "string:default('x')",
+    comment_column: "string:comment('备注')",
+    unsigned_column: 'integer:unsigned',
+    charset_column: "string:charset('utf8mb4')",
+    collation_column: "string:collation('utf8mb4_unicode_ci')",
+    collate_column: "string:collate('utf8mb4_unicode_ci')",
+    use_current: 'timestamp:useCurrent',
+    use_current_on_update: 'timestamp:useCurrentOnUpdate',
+    invisible_column: 'string:invisible',
+  },
+
+  modifier_index: {
+    table: 'comment(索引类列修饰符):timestamps(false)',
+    index_column: 'string:index',
+    unique_column: 'string:unique',
+    primary_column: 'string:primary',
+    fulltext_column: 'text:fulltext',
+    spatial_column: 'geometry:spatialIndex',
+    vector_column: 'vector(3):vectorIndex',
+  },
+
+  modifier_generated: {
+    table: 'comment(生成列修饰符):timestamps(false)',
+    virtual_column: "integer:virtualAs('1 + 1')",
+    stored_column: "integer:storedAs('1 + 1')",
+    generated_column: "integer:generatedAs('1 + 1')",
+    persisted_column: "integer:storedAs('1 + 1'):persisted",
+    always_column: "integer:generatedAs('1 + 1'):always",
+  },
+
+  modifier_alter: {
+    table: 'comment(修改表时使用的列修饰符):timestamps(false)',
+    after_column: "string:after('id')",
+    first_column: 'string:first',
+    change_column: 'string:change',
+    from_column: 'integer:from(1)',
+    starting_value_column: 'integer:startingValue(100)',
+    auto_increment_column: 'integer:autoIncrement',
+    autoincrement_column: 'integer:autoincrement',
+    lock_column: "string:lock('none')",
+    instant_column: 'string:instant',
+    using_column: "string:using('lower(name)')",
+  },
+
+  modifier_foreign: {
+    table: 'comment(外键类列修饰符):timestamps(false)',
+    legacy_foreign_column: "unsignedBigInteger:foreign:references('id'):on('roles'):onDelete('cascade'):onUpdate('restrict')",
+    constrained_column: "foreignId:constrained('roles')",
+    cascade_delete_column: 'foreignId:cascadeOnDelete',
+    null_delete_column: 'foreignId:nullOnDelete',
+    restrict_delete_column: 'foreignId:restrictOnDelete',
+    no_action_delete_column: 'foreignId:noActionOnDelete',
+    cascade_update_column: 'foreignId:cascadeOnUpdate',
+    null_update_column: 'foreignId:nullOnUpdate',
+    restrict_update_column: 'foreignId:restrictOnUpdate',
+    no_action_update_column: 'foreignId:noActionOnUpdate',
+  },
+
+  // ---------------------------------------------------------------
+  // 表级索引
+  // ---------------------------------------------------------------
+  index_demo: {
+    table: 'comment(表级索引参考):index(a):index(a,b|idx_ab):unique(c|uniq_c):primary(id)',
+    id: 'id',
+    a: 'string(50)',
+    b: 'string(50)',
+    c: 'string(50)',
+    d: 'string(50):index',
+    e: 'string(50):unique',
+    f: 'text:fulltext',
+    g: 'geometry:spatialIndex',
+  },
+
+  // ---------------------------------------------------------------
+  // 表级约束
+  // ---------------------------------------------------------------
+  composite_parents: {
+    table: 'comment(复合主键父表):primary(tenant_id,id):timestamps(false)',
+    tenant_id: 'unsignedBigInteger',
+    id: 'unsignedBigInteger',
+    name: 'string(50)',
+  },
+
+  constraint_demo: {
+    table: 'comment(表级约束参考):constraint(roles|id|role_id):constraint(users|id|user_id|cascade|restrict):constraint(posts|id|post_id|set null|cascade|fk_demo_post):constraint(categories|id|category_id||set null):constraint(composite_parents|tenant_id,id|tenant_id,parent_id|cascade|cascade|fk_demo_composite):constraint(constraint_demo|id|parent_id|set null|restrict):timestamps(false)',
+    id: 'id',
+    role_id: 'unsignedBigInteger',
+    user_id: 'unsignedBigInteger',
+    post_id: 'unsignedBigInteger:nullable',
+    category_id: 'unsignedBigInteger:nullable',
+    tenant_id: 'unsignedBigInteger',
+    parent_id: 'unsignedBigInteger:nullable',
+  },
+}

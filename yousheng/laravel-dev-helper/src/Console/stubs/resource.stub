@@ -1,0 +1,93 @@
+<?php
+
+namespace {{NAMESPACE}};
+
+use Laravel\Nova\Http\Requests\NovaRequest;
+use Laravel\Nova\Fields\ID;
+use Laravel\Nova\Resource;
+{{USES}}
+
+class {{RESOURCENAME}} extends Resource
+{
+    /**
+     * The model the resource corresponds to.
+     *
+     * @var class-string
+     */
+    public static $model = '{{MODELNAME}}';
+
+    /**
+     * The single value that should be used to represent the resource when being displayed.
+     *
+     * @var string
+     */
+    public static $title = 'id'; // 标题建议换成 name、title 等字段
+
+    /**
+     * The columns that should be searched.
+     *
+     * @var array
+     */
+    public static $search = [
+        'id' // 手动增加搜索字段，如 title、name、description
+    ];
+
+    // public static $tableStyle = 'tight';
+    // public static $showColumnBorders = true;
+    // public static $clickAction = 'preview'; // 可选：edit,default,preview,select,ignore
+    // public static $group = '分组';           // 根据菜单需要分组
+    // public static $perPageOptions = [10, 20, 50];
+
+    /**
+     * Get the fields displayed by the resource.
+     *
+     * @return array
+     */
+    public function fields(NovaRequest $request)
+    {
+        return [
+            ID::make()->sortable(),
+            {{FIELDS}}
+        ];
+    }
+
+    /**
+     * Get the cards available for the request.
+     *
+     * @return array
+     */
+    public function cards(NovaRequest $request)
+    {
+        return [];
+    }
+
+    /**
+     * Get the filters available for the resource.
+     *
+     * @return array
+     */
+    public function filters(NovaRequest $request)
+    {
+        return [];
+    }
+
+    /**
+     * Get the lenses available for the resource.
+     *
+     * @return array
+     */
+    public function lenses(NovaRequest $request)
+    {
+        return [];
+    }
+
+    /**
+     * Get the actions available for the resource.
+     *
+     * @return array
+     */
+    public function actions(NovaRequest $request)
+    {
+        return [];
+    }
+}

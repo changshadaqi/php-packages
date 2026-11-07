@@ -1,0 +1,19 @@
+{
+  // 文章表：注释、尾随逗号、单引号、未加引号键
+  posts: {
+    table: 'comment(文章表):index(title):constraint(users|id|user_id|cascade|restrict)',
+    id: 'id',
+    user_id: 'unsignedBigInteger',
+    title: "string(200)",
+    body: 'longText:nullable',
+    url: "string:default('http://example.com//not-a-comment/*still-not*/')",
+  },
+  /* 用户表 */
+  users: {
+    table: "comment(用户表):index(name)",
+    id: 'id',
+    name: 'string(50)',
+    email: "string(255):unique",
+    active: 'boolean:default(true)',
+  },
+}

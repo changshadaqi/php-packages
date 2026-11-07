@@ -1,0 +1,78 @@
+{
+  "roles": {
+    "table": "comment(角色表)",
+    "id": "id",
+    "name": "string(50)"
+  },
+  "users": {
+    "table": "comment(用户表):index(name):constraint(roles|id|role_id|cascade|set null)",
+    "id": "id",
+    "role_id": "unsignedBigInteger:nullable",
+    "name": "string(50)",
+    "email": "string(255):unique",
+    "password": "string(255)"
+  },
+  "categories": {
+    "table": "comment(分类表):unique(slug):constraint(categories|id|parent_id|set null|restrict)",
+    "id": "id",
+    "parent_id": "unsignedBigInteger:nullable",
+    "name": "string(50)",
+    "slug": "string(80)"
+  },
+  "posts": {
+    "table": "comment(文章表):index(title):unique(slug):constraint(users|id|user_id|cascade|restrict):constraint(categories|id|category_id|set null|restrict):softDeletes",
+    "id": "id",
+    "user_id": "unsignedBigInteger",
+    "category_id": "unsignedBigInteger:nullable",
+    "title": "string(200)",
+    "slug": "string(200)",
+    "body": "longText:nullable",
+    "status": "enum('draft','published'):default('draft'):index",
+    "published_at": "timestamp:nullable",
+    "views": "unsignedInteger:default(0)"
+  },
+  "tags": {
+    "table": "comment(标签表):unique(slug)",
+    "id": "id",
+    "name": "string(50)",
+    "slug": "string(80)"
+  },
+  "post_tag": {
+    "table": "comment(文章标签中间表):primary(post_id,tag_id):constraint(posts|id|post_id|cascade|cascade):constraint(tags|id|tag_id|cascade|cascade):timestamps(false)",
+    "post_id": "unsignedBigInteger",
+    "tag_id": "unsignedBigInteger"
+  },
+  "comments": {
+    "table": "comment(评论表):index(post_id):constraint(posts|id|post_id|cascade|cascade):constraint(users|id|user_id|set null|restrict)",
+    "id": "id",
+    "post_id": "unsignedBigInteger",
+    "user_id": "unsignedBigInteger:nullable",
+    "body": "text",
+    "created_at": "timestamp:nullable",
+    "updated_at": "timestamp:nullable"
+  },
+  "products": {
+    "table": "comment(商品表):unique(sku):index(name)",
+    "id": "id",
+    "name": "string(120)",
+    "sku": "string(80)",
+    "price": "decimal(10,2):default(0)",
+    "stock": "unsignedInteger:default(0)"
+  },
+  "orders": {
+    "table": "comment(订单表):index(order_no):constraint(users|id|user_id|set null|restrict)",
+    "id": "id",
+    "user_id": "unsignedBigInteger:nullable",
+    "order_no": "string(50)",
+    "total": "decimal(10,2):default(0)",
+    "status": "enum('pending','paid','shipped','closed'):default('pending'):index"
+  },
+  "order_items": {
+    "table": "comment(订单明细表):index(order_id):constraint(orders|id|order_id|cascade|cascade):constraint(products|id|product_id|cascade|restrict):timestamps(false)",
+    "id": "id",
+    "order_id": "unsignedBigInteger",
+    "product_id": "unsignedBigInteger",
+    "quantity": "unsignedInteger:default(1)",
+    "price": "decimal(10,2):default(0)"
+  }
+}
