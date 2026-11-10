@@ -1,12 +1,14 @@
 {
   // 文章表：注释、尾随逗号、单引号、未加引号键
   posts: {
-    table: 'comment(文章表):index(title):constraint(users|id|user_id|cascade|restrict)',
+    table: 'comment(文章表):engine(InnoDB):charset(utf8mb4):collation(utf8mb4_unicode_ci):constraint(users|id|user_id|cascade|restrict)',
     id: 'id',
-    user_id: 'unsignedBigInteger',
-    title: "string(200)",
-    body: 'longText:nullable',
-    url: "string:default('http://example.com//not-a-comment/*still-not*/')",
+    slug: 'string(255)',
+    user_id: "tinyInteger:unsigned:comment('User Id, Who published the post')",
+    category_id: 'integer:unsigned',
+    thumbnail_image: 'string(100):nullable',
+    status: "enum('0','1'):default('0'):comment('0 means unpublished, 1 means published')",
+    meta_image: 'string(255):nullable',
   },
   /* 用户表 */
   users: {
@@ -15,5 +17,26 @@
     name: 'string(50)',
     email: "string(255):unique",
     active: 'boolean:default(true)',
+  },
+  /* 标签表 */
+  tags: {
+    table: 'comment(标签表):unique(slug)',
+    id: 'id',
+    name: 'string(50)',
+    slug: 'string(80)',
+  },
+  // 文章标签中间表：体现 posts 与 tags 的多对多关系
+  post_tag: {
+    table: 'comment(文章标签中间表):primary(post_id,tag_id):constraint(posts|id|post_id|cascade|cascade):constraint(tags|id|tag_id|cascade|cascade):timestamps(false)',
+    post_id: 'unsignedBigInteger',
+    tag_id: 'unsignedBigInteger',
+  },
+  /* 评论表 */
+  comments: {
+    table: 'comment(评论表):index(post_id):constraint(posts|id|post_id|cascade|cascade):constraint(users|id|user_id|set null|restrict)',
+    id: 'id',
+    post_id: 'unsignedBigInteger',
+    user_id: 'unsignedBigInteger:nullable',
+    body: 'text',
   },
 }

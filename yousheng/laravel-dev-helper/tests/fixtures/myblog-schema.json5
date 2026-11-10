@@ -1,0 +1,85 @@
+{
+  /*
+   * 由 bione.sql 中的 blog 相关表还原（含 ALTER TABLE 部分的索引与外键约束）：
+   * 约束均为 ON DELETE CASCADE（dump 未指定 ON UPDATE，即 RESTRICT）；
+   * created_at/updated_at 由默认开启的表级 timestamps 生成，无需声明。
+   */
+  /* 文章表 */
+  posts: {
+    table: 'comment(文章表):constraint(users|id|user_id|cascade|restrict)',
+    id: 'id',
+    slug: 'string(255)',
+    user_id: "unsignedBigInteger :unsigned:comment('User Id, Who published the post')",
+    category_id: 'integer:unsigned',
+    thumbnail_image: 'string(100):nullable',
+    status: "enum('0','1'):default('0'):comment('0 means unpublished, 1 means published')",
+    meta_image: 'string(255):nullable',
+  },
+  /* 文章多语言内容表 */
+  post_contents: {
+    table: 'comment(文章内容表):index(post_id):index(language_code):constraint(posts|id|post_id|cascade|restrict)',
+    id: 'id',
+    post_id: 'unsignedBigInteger',
+    language_code: 'string(10)',
+    title: 'string(255)',
+    content: 'longText',
+    meta_title: "string(255):nullable:comment('meta title for seo')",
+    meta_tags: 'string(255):nullable',
+    meta_description: "string(255):nullable:comment('meta description for seo')",
+  },
+  /* 分类表（名称等文本在 category_contents 中按语言存储） */
+  categories: {
+    table: 'comment(分类表)',
+    id: 'id',
+    parent_id: 'integer:nullable',
+  },
+  /* 分类多语言内容表 */
+  category_contents: {
+    table: 'comment(分类内容表):index(category_id):index(language_code):constraint(categories|id|category_id|cascade|restrict)',
+    id: 'id',
+    category_id: 'unsignedBigInteger',
+    language_code: 'string(10)',
+    title: 'string(255)',
+  },
+  /* 标签表 */
+  tags: {
+    table: 'comment(标签表)',
+    id: 'id',
+    name: "longText:collation('utf8mb4_bin')",
+    slug: "longText:collation('utf8mb4_bin')",
+    type: 'string(255):nullable',
+    order_column: 'integer:nullable',
+  },
+  /* 标签多态中间表：无自增主键、无时间戳 */
+  taggables: {
+    table: 'comment(标签多态中间表):unique(tag_id,taggable_id,taggable_type):index(taggable_type,taggable_id):constraint(tags|id|tag_id|cascade|restrict):timestamps(false)',
+    tag_id: 'unsignedBigInteger',
+    taggable_type: 'string(255)',
+    taggable_id: 'unsignedBigInteger',
+  },
+  /* 用户表 */
+  users: {
+    table: 'comment(用户表):unique(email)',
+    id: 'id',
+    name: 'string(255)',
+    email: 'string(255)',
+    about: 'string(255):nullable',
+    email_verified_at: 'timestamp:nullable',
+    password: 'string(255)',
+    provider: 'string(50):nullable',
+    provider_id: 'string(100):nullable',
+    remember_token: 'rememberToken',
+  },
+  /* 评论表（评论人以姓名/邮箱/网站标识，不关联 users） */
+  comments: {
+    table: 'comment(评论表):index(post_id):constraint(posts|id|post_id|cascade|restrict)',
+    id: 'id',
+    post_id: 'unsignedBigInteger',
+    comment_parent: 'tinyInteger:nullable',
+    comment_author_name: 'string(100)',
+    comment_author_email: 'string(100)',
+    comment_author_website: 'string(100):nullable',
+    comment_content: 'text',
+    is_approved: "enum('0','1'):default('0'):comment('0 means no, 1 means yes')",
+  },
+}

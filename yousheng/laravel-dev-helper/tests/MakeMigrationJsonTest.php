@@ -188,12 +188,21 @@ class MakeMigrationJsonTest extends TestCase
 
         $this->assertIsArray($data);
         $this->assertSame(
-            "string:default('http://example.com//not-a-comment/*still-not*/')",
-            $data['posts']['url']
+            "enum('0','1'):default('0'):comment('0 means unpublished, 1 means published')",
+            $data['posts']['status']
         );
 
         $tables = $this->parser->parseTables($data);
-        $this->assertSame(['create_users_table', 'create_posts_table'], array_keys($tables));
+        $this->assertEqualsCanonicalizing(
+            [
+                'create_posts_table',
+                'create_users_table',
+                'create_tags_table',
+                'create_post_tag_table',
+                'create_comments_table',
+            ],
+            array_keys($tables)
+        );
         $this->assertSame('文章表', $tables['create_posts_table']['comment']);
     }
 

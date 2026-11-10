@@ -1,0 +1,17 @@
+total 118
+v13.3.0 | None | php ^8.3
+v13.2.0 | None | php None
+v13.1.0 | None | php None
+v13.0.0 | None | php None
+v12.0.5 | None | php >=8.2
+v12.0.4 | None | php None
+v12.0.3 | None | php None
+v12.0.2 | None | php None
+v12.0.1 | None | php None
+v12.0.0 | None | php None
+v11.1.10 | None | php None
+v11.1.9 | None | php None
+v11.1.8 | None | php None
+v11.1.7 | None | php None
+v11.1.6 | None | php None
+v11.1.5 | None | php None

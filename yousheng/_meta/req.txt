@@ -1,0 +1,17 @@
+{
+ "v13.3.0": {
+  "php": "^8.3",
+  "ext-dom": "*",
+  "ext-json": "*",
+  "ext-simplexml": "*",
+  "wikimedia/composer-merge-plugin": "^2.1"
+ },
+ "v13.0.0": null,
+ "v12.0.5": {
+  "php": ">=8.2",
+  "ext-dom": "*",
+  "ext-json": "*",
+  "ext-simplexml": "*",
+  "wikimedia/composer-merge-plugin": "^2.1"
+ }
+}

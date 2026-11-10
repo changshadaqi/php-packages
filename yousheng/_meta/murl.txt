@@ -1,0 +1,1 @@
+﻿https://mirrors.huaweicloud.com/repository/php/nwidart/laravel-modules/v13.3.0/nwidart-laravel-modules-v13.3.0.zip
