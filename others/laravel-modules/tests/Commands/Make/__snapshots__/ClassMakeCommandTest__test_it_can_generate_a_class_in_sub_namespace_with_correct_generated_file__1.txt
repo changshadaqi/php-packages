@@ -1,0 +1,8 @@
+<?php
+
+namespace Modules\Blog\Classes\Api;
+
+class Api\Demo
+{
+    public function __construct() {}
+}

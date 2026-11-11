@@ -1,0 +1,146 @@
+name: PHP Pipeline
+
+on:
+  push:
+    branches:
+      - master
+      - '*.x'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4', '8.5']
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Validate composer.json
+        run: composer validate
+
+      # composer.lock is not committed, so this resolves the highest versions allowed by composer.json.
+      - name: Install dependencies
+        uses: ramsey/composer-install@v4
+        with:
+          dependency-versions: highest
+
+      - name: Run test suite
+        run: composer test
+
+  phpstan:
+    name: PHPStan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v4
+        with:
+          dependency-versions: highest
+
+      - name: Run PHPStan
+        run: composer analyse
+
+  phplint:
+    name: Pint
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    env:
+      # Fork PRs get a read-only token, so fixes cannot be pushed back: check style instead.
+      IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+
+    steps:
+      # Same-repo PRs check out the head branch so the fix commit lands on it. Push and fork PR events use the default ref.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || '' }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v4
+        with:
+          dependency-versions: highest
+
+      - name: Fix code style
+        if: env.IS_FORK != 'true'
+        run: composer lint
+
+      - name: Check code style
+        if: env.IS_FORK == 'true'
+        run: composer lint:check
+
+      - name: Commit changes
+        if: env.IS_FORK != 'true'
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: 'style: apply pint fixes'
+
+  commits:
+    name: Conventional Commits
+    # Dependabot writes its own commit messages, so its PRs are not checked.
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Checks every non-merge commit the PR adds. The range starts at the current
+      # base branch, so commits merged in from it are not checked again. See CONTRIBUTING.md.
+      - name: Check commit messages
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\([a-z0-9._/-]+\))?!?: .+'
+          commits=$(git log --no-merges --format='%h %s' "origin/$BASE_REF..$HEAD_SHA")
+          bad=0
+          while IFS= read -r line; do
+            [[ -n $line ]] || continue
+            subject=${line#* }
+            if [[ $subject =~ $pattern ]]; then
+              echo "ok   $line"
+            else
+              echo "::error::Not a Conventional Commit: $line"
+              bad=1
+            fi
+          done <<< "$commits"
+          if [[ $bad -ne 0 ]]; then
+            echo "Commit subjects must look like 'fix(scope): description'. See CONTRIBUTING.md. Reword them with git rebase -i and force-push."
+            exit 1
+          fi

@@ -1,0 +1,150 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Stancl\Tenancy\Database\Concerns;
+
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use Stancl\Tenancy\Contracts\Tenant;
+use Stancl\Tenancy\Events\CreatingPendingTenant;
+use Stancl\Tenancy\Events\PendingTenantCreated;
+use Stancl\Tenancy\Events\PendingTenantPulled;
+use Stancl\Tenancy\Events\PullingPendingTenant;
+
+/**
+ * @property ?Carbon $pending_since
+ *
+ * @method static static|\Illuminate\Database\Eloquent\Builder<static>|\Illuminate\Database\Query\Builder withPending(bool $withPending = true)
+ * @method static static|\Illuminate\Database\Eloquent\Builder<static>|\Illuminate\Database\Query\Builder onlyPending()
+ * @method static static|\Illuminate\Database\Eloquent\Builder<static>|\Illuminate\Database\Query\Builder withoutPending()
+ */
+trait HasPending
+{
+    public static string $pendingSinceCast = 'timestamp';
+
+    /** Boot the trait. */
+    public static function bootHasPending(): void
+    {
+        static::addGlobalScope(new PendingScope());
+
+        static::creating(function (self $tenant): void {
+            if ($tenant->pending()) {
+                event(new CreatingPendingTenant($tenant));
+            }
+        });
+
+        static::created(function (self $tenant): void {
+            if ($tenant->pending()) {
+                event(new PendingTenantCreated($tenant));
+            }
+        });
+    }
+
+    /** Initialize the trait. */
+    public function initializeHasPending(): void
+    {
+        $this->casts['pending_since'] = static::$pendingSinceCast;
+    }
+
+    /** Determine if the model instance is in a pending state. */
+    public function pending(): bool
+    {
+        return ! is_null($this->pending_since);
+    }
+
+    /**
+     * Create a pending tenant.
+     *
+     * @param array<string, mixed> $attributes
+     */
+    public static function createPending(array $attributes = []): Model&Tenant
+    {
+        return static::create(array_merge(
+            static::getPendingAttributes($attributes),
+            $attributes,
+            ['pending_since' => now()->timestamp],
+        ));
+    }
+
+    /**
+     * Attributes to be set when a pending tenant is initially created.
+     *
+     * @param array<string, mixed> $attributes The attributes passed to createPending() (will be merged with the returned array)
+     * @return array<string, mixed>
+     */
+    public static function getPendingAttributes(array $attributes): array
+    {
+        return [];
+    }
+
+    /**
+     * Pull a pending tenant from the pool or create a new one if the pool is empty.
+     *
+     * @param array $attributes The attributes to set on the tenant.
+     */
+    public static function pullPending(array $attributes = []): Model&Tenant
+    {
+        /** @var Model&Tenant $pendingTenant */
+        $pendingTenant = static::pullPendingFromPool(true, $attributes);
+
+        return $pendingTenant;
+    }
+
+    /**
+     * Try to pull a tenant from the pool of pending tenants.
+     *
+     * @param bool $firstOrCreate If true, a tenant will be *created* if the pool is empty. Otherwise null is returned.
+     * @param array $attributes The attributes to set on the tenant.
+     */
+    public static function pullPendingFromPool(bool $firstOrCreate = false, array $attributes = []): ?Tenant
+    {
+        // Attempt pulling a pending tenant.
+        // The loop handles the case where a single tenant is being pulled by multiple processes at the same time.
+        // If a tenant was pulled by a concurrent process, try pulling the next one in the pool.
+        while (true) {
+            /** @var (Model&Tenant)|null $pullCandidate */
+            $pullCandidate = static::onlyPending()->first();
+
+            if ($pullCandidate === null) {
+                return $firstOrCreate ? static::create($attributes) : null;
+            }
+
+            // Fired before the claim, so it can fire once per attempt, including for a candidate
+            // that ends up being claimed by a different process (in which case the loop retries).
+            // PendingTenantPulled (below) fires exactly once, for the actually pulled tenant.
+            event(new PullingPendingTenant($pullCandidate));
+
+            $tenant = DB::transaction(function () use ($pullCandidate, $attributes): ?Tenant {
+                $tenantWasPulled = static::onlyPending()
+                    ->whereKey($pullCandidate->getKey())
+                    ->update([$pullCandidate->getColumnForQuery('pending_since') => null]) > 0;
+
+                if (! $tenantWasPulled) {
+                    return null;
+                }
+
+                // The tenant's pending_since was just cleared, and a PullingPendingTenant listener
+                // may have made changes to the tenant, so re-fetch it to make sure it's up to date.
+                /** @var Model&Tenant $pulledTenant */
+                $pulledTenant = static::findOrFail($pullCandidate->getKey());
+
+                if (! empty($attributes)) {
+                    $pulledTenant->update($attributes);
+                }
+
+                return $pulledTenant;
+            });
+
+            if ($tenant === null) {
+                // If another pull claimed this tenant first, try claiming the next one
+                continue;
+            }
+
+            event(new PendingTenantPulled($tenant));
+
+            return $tenant;
+        }
+    }
+}

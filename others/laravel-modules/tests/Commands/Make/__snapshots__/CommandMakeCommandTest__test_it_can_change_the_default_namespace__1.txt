@@ -1,0 +1,17 @@
+<?php
+
+namespace Modules\Blog\CustomCommands;
+
+use Illuminate\Console\Attributes\Description;
+use Illuminate\Console\Attributes\Signature;
+use Illuminate\Console\Command;
+
+#[Signature('command:name')]
+#[Description('Command description')]
+class AwesomeCommand extends Command
+{
+    /**
+     * Execute the console command.
+     */
+    public function handle() {}
+}

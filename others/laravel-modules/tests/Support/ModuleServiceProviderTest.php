@@ -1,0 +1,175 @@
+<?php
+
+namespace Nwidart\Modules\Tests\Support;
+
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\ServiceProvider;
+use Nwidart\Modules\Contracts\RepositoryInterface;
+use Nwidart\Modules\Support\ModuleServiceProvider;
+use Nwidart\Modules\Tests\BaseTestCase;
+
+class ModuleServiceProviderTest extends BaseTestCase
+{
+    /**
+     * @var Filesystem
+     */
+    private $finder;
+
+    /**
+     * @var string
+     */
+    private $configPath;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->finder = $this->app['files'];
+        $this->createModule();
+        $this->configPath = module_path('Blog', config('modules.paths.generator.config.path'));
+
+        // Publish paths are static and keyed by provider class; the anonymous provider below keeps its class name across tests.
+        ServiceProvider::$publishes = [];
+        ServiceProvider::$publishGroups = [];
+    }
+
+    protected function tearDown(): void
+    {
+        $this->app[RepositoryInterface::class]->delete('Blog');
+        parent::tearDown();
+    }
+
+    public function test_module_config_values_override_existing_config()
+    {
+        $this->writeModuleConfig('config.php', ['name' => 'Blog']);
+        $this->writeModuleConfig('settings.php', ['theme' => 'light']);
+
+        // Values already loaded, e.g. from the app's config/blog.php and config/blog/settings.php.
+        config([
+            'blog' => ['name' => 'My Blog', 'per_page' => 10],
+            'blog.settings' => ['theme' => 'dark', 'cache' => true],
+        ]);
+
+        $this->registerModuleConfig();
+
+        // Module values win (deliberate, see PR #2053); keys only the app defines are kept.
+        $this->assertSame('Blog', config('blog.name'));
+        $this->assertSame(10, config('blog.per_page'));
+        $this->assertSame('light', config('blog.settings.theme'));
+        $this->assertTrue(config('blog.settings.cache'));
+    }
+
+    public function test_a_dedicated_config_file_wins_over_the_same_key_in_config_php()
+    {
+        // Written in this order so a directory listing in creation order would load config.php last.
+        $this->writeModuleConfig('settings.php', ['theme' => 'light']);
+        $this->writeModuleConfig('nested/options.php', ['enabled' => true]);
+        $this->writeModuleConfig('config.php', [
+            'name' => 'Blog',
+            'settings' => ['theme' => 'dark', 'per_page' => 10],
+            'nested' => ['options' => ['enabled' => false, 'driver' => 'file']],
+        ]);
+
+        $this->registerModuleConfig();
+
+        $this->assertSame('Blog', config('blog.name'));
+        $this->assertSame('light', config('blog.settings.theme'));
+        $this->assertSame(10, config('blog.settings.per_page'));
+        $this->assertTrue(config('blog.nested.options.enabled'));
+        $this->assertSame('file', config('blog.nested.options.driver'));
+    }
+
+    public function test_config_files_are_published_to_the_path_of_their_config_key()
+    {
+        $this->writeModuleConfig('config.php', ['name' => 'Blog']);
+        $this->writeModuleConfig('settings.php', ['theme' => 'light']);
+        $this->writeModuleConfig('nested/options.php', ['enabled' => true]);
+        $this->writeModuleConfig('blog/extra.php', ['enabled' => true]);
+
+        $provider = $this->registerModuleConfig();
+
+        $published = ServiceProvider::pathsToPublish($provider::class, 'config');
+
+        $this->assertSame(config_path('blog.php'), $published[$this->configPath.'/config.php']);
+        $this->assertSame(config_path('blog/settings.php'), $published[$this->configPath.'/settings.php']);
+        $this->assertSame(config_path('blog/nested/options.php'), $published[$this->configPath.'/nested/options.php']);
+        $this->assertSame(config_path('blog/extra.php'), $published[$this->configPath.'/blog/extra.php']);
+
+        // Never publish to a top-level app config file, which could overwrite e.g. the app's config/settings.php.
+        $this->assertNotContains(config_path('settings.php'), $published);
+        $this->assertNotContains(config_path('nested/options.php'), $published);
+        $this->assertNotContains(config_path('extra.php'), $published);
+        $this->assertNotContains(config_path('blog/blog/extra.php'), $published);
+
+        $this->assertSame('Blog', config('blog.name'));
+        $this->assertSame('light', config('blog.settings.theme'));
+        $this->assertTrue(config('blog.nested.options.enabled'));
+        $this->assertTrue(config('blog.extra.enabled'));
+    }
+
+    public function test_cached_config_still_registers_publish_paths_in_the_console()
+    {
+        $this->writeModuleConfig('config.php', ['name' => 'Blog']);
+        $this->writeModuleConfig('settings.php', ['theme' => 'light']);
+        config(['blog' => ['name' => 'Cached Blog']]);
+        $this->app->instance('config_loaded_from_cache', true);
+
+        $provider = $this->registerModuleConfig();
+
+        // vendor:publish runs in the console and must still find the module config files.
+        $published = ServiceProvider::pathsToPublish($provider::class, 'config');
+        $this->assertSame(config_path('blog.php'), $published[$this->configPath.'/config.php']);
+        $this->assertSame(config_path('blog/settings.php'), $published[$this->configPath.'/settings.php']);
+
+        // Cached values are left untouched.
+        $this->assertSame(['name' => 'Cached Blog'], config('blog'));
+    }
+
+    public function test_views_are_published_in_the_console()
+    {
+        $provider = $this->moduleProvider();
+        $provider->registerModuleViews();
+
+        $sourcePath = module_path('Blog', config('modules.paths.generator.views.path'));
+
+        $this->assertSame(
+            [$sourcePath => resource_path('views/modules/blog')],
+            ServiceProvider::pathsToPublish($provider::class, 'blog-module-views')
+        );
+    }
+
+    private function writeModuleConfig(string $file, array $values): void
+    {
+        $path = $this->configPath.'/'.$file;
+
+        $this->finder->ensureDirectoryExists(dirname($path));
+        $this->finder->put($path, '<?php return '.var_export($values, true).';');
+    }
+
+    private function registerModuleConfig(): ModuleServiceProvider
+    {
+        $provider = $this->moduleProvider();
+        $provider->registerModuleConfig();
+
+        return $provider;
+    }
+
+    private function moduleProvider(): ModuleServiceProvider
+    {
+        return new class($this->app) extends ModuleServiceProvider
+        {
+            protected string $name = 'Blog';
+
+            protected string $nameLower = 'blog';
+
+            public function registerModuleConfig(): void
+            {
+                $this->registerConfig();
+            }
+
+            public function registerModuleViews(): void
+            {
+                $this->registerViews();
+            }
+        };
+    }
+}

@@ -1,0 +1,202 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Support\Facades\Event;
+use Stancl\Tenancy\Contracts\TenancyBootstrapper;
+use Stancl\Tenancy\Events\TenancyEnded;
+use Stancl\Tenancy\Events\TenancyInitialized;
+use Stancl\Tenancy\Listeners\BootstrapTenancy;
+use Stancl\Tenancy\Listeners\RevertToCentralContext;
+use Stancl\Tenancy\Tests\Etc\Tenant;
+use function Stancl\Tenancy\Tests\pest;
+use function Stancl\Tenancy\Tests\withTenantDatabases;
+
+beforeEach(function () {
+    Event::listen(TenancyInitialized::class, BootstrapTenancy::class);
+    Event::listen(TenancyEnded::class, RevertToCentralContext::class);
+});
+
+test('context is switched to tenant when initializing tenancy and reverted when ending tenancy', function () {
+    config(['tenancy.bootstrappers' => [
+        MyBootstrapper::class,
+    ]]);
+
+    $tenant = Tenant::create([
+        'id' => 'acme',
+    ]);
+
+    tenancy()->initialize($tenant);
+
+    expect(app('tenancy_initialized_for_tenant'))->toBe('acme');
+
+    tenancy()->end();
+
+    expect(app('tenancy_ended'))->toBe(true);
+});
+
+test('context is switched when tenancy is reinitialized', function () {
+    config(['tenancy.bootstrappers' => [
+        MyBootstrapper::class,
+    ]]);
+
+    $tenant = Tenant::create([
+        'id' => 'acme',
+    ]);
+
+    tenancy()->initialize($tenant);
+
+    expect(app('tenancy_initialized_for_tenant'))->toBe('acme');
+
+    $tenant2 = Tenant::create([
+        'id' => 'foobar',
+    ]);
+
+    tenancy()->initialize($tenant2);
+
+    expect(app('tenancy_initialized_for_tenant'))->toBe('foobar');
+});
+
+test('initializing tenancy for the current tenant replaces the tenant instance without running bootstrappers again', function () {
+    config(['tenancy.bootstrappers' => [
+        MyBootstrapper::class,
+    ]]);
+
+    $tenant = Tenant::create([
+        'id' => 'acme',
+    ]);
+    $tenant->domains()->create(['domain' => 'a.localhost']);
+
+    tenancy()->initialize($tenant);
+
+    expect(tenant()->domains->pluck('domain')->all())->toBe(['a.localhost']);
+    expect(app('tenancy_initialized_for_tenant'))->toBe('acme');
+
+    $tenant->domains()->create(['domain' => 'b.localhost']);
+    app()->instance('tenancy_initialized_for_tenant', 'not bootstrapped again');
+
+    tenancy()->initialize($freshTenant = Tenant::find('acme'));
+
+    // tenant() is replaced with the passed instance, instead of keeping the
+    // previous instance with its stale loaded relations
+    expect(tenant())->toBe($freshTenant)->not()->toBe($tenant);
+    expect(tenant()->domains->pluck('domain')->sort()->values()->all())->toBe(['a.localhost', 'b.localhost']);
+
+    // Tenancy isn't ended and bootstrappers aren't run again
+    expect(tenancy()->initialized)->toBeTrue();
+    expect(app('tenancy_initialized_for_tenant'))->toBe('not bootstrapped again');
+});
+
+test('central helper runs callbacks in the central state', function () {
+    withTenantDatabases();
+
+    tenancy()->initialize($tenant = Tenant::create());
+
+    tenancy()->central(function () {
+        expect(tenant())->toBe(null);
+    });
+
+    expect(tenant())->toBe($tenant);
+});
+
+test('central helper returns the value from the callback', function () {
+    withTenantDatabases();
+
+    tenancy()->initialize(Tenant::create());
+
+    pest()->assertSame('foo', tenancy()->central(function () {
+        return 'foo';
+    }));
+});
+
+test('central helper reverts back to tenant context', function () {
+    withTenantDatabases();
+
+    tenancy()->initialize($tenant = Tenant::create());
+
+    tenancy()->central(function () {
+        //
+    });
+
+    expect(tenant())->toBe($tenant);
+});
+
+test('central helper does not revert to tenant context when the callback throws an exception', function () {
+    withTenantDatabases();
+
+    tenancy()->initialize(Tenant::create());
+
+    // The exception propagates (and would be reported) in the central context, where it occurred.
+    // See the central() docblock.
+    expect(fn () => tenancy()->central(function () {
+        throw new Exception('foo');
+    }))->toThrow(Exception::class, 'foo');
+
+    expect(tenancy()->initialized)->toBeFalse();
+    expect(tenant())->toBeNull();
+});
+
+test('central helper doesnt change tenancy state when called in central context', function () {
+    expect(tenancy()->initialized)->toBeFalse();
+    expect(tenant())->toBeNull();
+
+    tenancy()->central(function () {
+        //
+    });
+
+    expect(tenancy()->initialized)->toBeFalse();
+    expect(tenant())->toBeNull();
+});
+
+test('reinitialize method does nothing in the central context', function () {
+    expect(tenancy()->initialized)->toBe(false);
+    expect(fn () => tenancy()->reinitialize())->not()->toThrow(\Throwable::class);
+    expect(tenancy()->initialized)->toBe(false);
+});
+
+test('reinitialize method runs bootstrappers again for the current tenant', function () {
+    config(['tenancy.bootstrappers' => [
+        ReinitBootstrapper::class,
+    ]]);
+
+    tenancy()->initialize($tenant = Tenant::create(['reinit_bootstrapper_key' => 'foo']));
+
+    expect(tenant()->getKey())->toBe($tenant->getKey());
+    expect(app('tenancy_reinit_bootstrapper_key'))->toBe('foo');
+
+    $tenant->update(['reinit_bootstrapper_key' => 'bar']);
+
+    // Unchanged until we reinitialize...
+    expect(app('tenancy_reinit_bootstrapper_key'))->toBe('foo');
+
+    tenancy()->reinitialize();
+
+    expect(tenant()->getKey())->toBe($tenant->getKey());
+    expect(app('tenancy_reinit_bootstrapper_key'))->toBe('bar');
+});
+
+class MyBootstrapper implements TenancyBootstrapper
+{
+    public function bootstrap(\Stancl\Tenancy\Contracts\Tenant $tenant): void
+    {
+        app()->instance('tenancy_initialized_for_tenant', $tenant->getTenantKey());
+    }
+
+    public function revert(): void
+    {
+        app()->instance('tenancy_ended', true);
+    }
+}
+
+class ReinitBootstrapper implements TenancyBootstrapper
+{
+    public function bootstrap(\Stancl\Tenancy\Contracts\Tenant $tenant): void
+    {
+        app()->instance('tenancy_reinit_bootstrapper_key', $tenant->getAttribute('reinit_bootstrapper_key'));
+    }
+
+    public function revert(): void
+    {
+        app()->instance('tenancy_reinit_bootstrapper_key', null);
+    }
+}

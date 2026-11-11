@@ -1,0 +1,41 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Stancl\Tenancy\Jobs;
+
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Artisan;
+use Stancl\Tenancy\Database\Contracts\TenantWithDatabase;
+
+class SeedDatabase implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    /**
+     * Should pending tenants be included while seeding,
+     * regardless of the tenancy.pending.include_in_queries config value.
+     *
+     * If false, pending tenants will be specifically excluded.
+     *
+     * If null, default to tenancy.pending.include_in_queries config.
+     */
+    public static ?bool $includePending = true;
+
+    public function __construct(
+        protected TenantWithDatabase&Model $tenant,
+    ) {}
+
+    public function handle(): void
+    {
+        Artisan::call('tenants:seed', [
+            '--tenants' => [$this->tenant->getTenantKey()],
+            '--with-pending' => static::$includePending ?? config('tenancy.pending.include_in_queries'),
+        ]);
+    }
+}

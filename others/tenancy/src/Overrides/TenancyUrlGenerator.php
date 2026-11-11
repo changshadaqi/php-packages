@@ -1,0 +1,225 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Stancl\Tenancy\Overrides;
+
+use BackedEnum;
+use Illuminate\Routing\UrlGenerator;
+use Illuminate\Support\Arr;
+use InvalidArgumentException;
+use Stancl\Tenancy\Resolvers\PathTenantResolver;
+use Stancl\Tenancy\Resolvers\RequestDataTenantResolver;
+
+/**
+ * This class is used in place of the default UrlGenerator when UrlGeneratorBootstrapper is enabled.
+ *
+ * TenancyUrlGenerator does a few extra things:
+ *   - Autofills the tenant parameter in the tenant context with the current tenant.
+ *     This is done either by:
+ *       - URL::defaults() -- if UrlGeneratorBootstrapper::$addTenantParameterToDefaults is enabled.
+ *         This generally has the best support since tools like e.g. Ziggy read defaults().
+ *       - Automatically passing ['tenant' => ...] to each route() call -- if TenancyUrlGenerator::$passTenantParameterToRoutes is enabled
+ *         This is a more universal solution since it supports both path identification and query parameter identification.
+ *
+ *   - Prepends route names with the tenant route name prefix ('tenant.' by default,
+ *     configurable at tenant_route_name_prefix under PathTenantResolver) if $prefixRouteNames is enabled.
+ *     This is primarily useful when using route cloning with path identification.
+ *
+ * Affected methods: route(), toRoute(), temporarySignedRoute(), signedRoute() (the last two via the route() override).
+ *
+ * To bypass this behavior on any single affected method call, pass the $bypassParameter as true (['central' => true] by default).
+ */
+class TenancyUrlGenerator extends UrlGenerator
+{
+    /**
+     * Parameter which works as a flag for bypassing the behavior modification of the affected methods.
+     *
+     * For example, in tenant context:
+     * Route::get('/', ...)->name('home');
+     * // query string identification
+     * Route::get('/tenant', ...)->middleware(InitializeTenancyByRequestData::class)->name('tenant.home');
+     * - route('home') => app.test/tenant?tenant=tenantKey
+     * - route('home', [$bypassParameter => true]) => app.test/
+     * - route('tenant.home', [$bypassParameter => true]) => app.test/tenant -- no query string added
+     *
+     * Note: UrlGeneratorBootstrapper::$addTenantParameterToDefaults is not affected by this, though
+     * it doesn't matter since it doesn't pass any extra parameters when not needed.
+     *
+     * @see Stancl\Tenancy\Bootstrappers\UrlGeneratorBootstrapper
+     */
+    public static string $bypassParameter = 'central';
+
+    /**
+     * Should route names passed to the affected methods
+     * get prefixed with the tenant route name prefix.
+     *
+     * This is useful when using e.g. path identification with third-party packages
+     * where you don't have control over all route() calls or don't want to change
+     * too many files. Often this will be when using route cloning.
+     */
+    public static bool $prefixRouteNames = false;
+
+    /**
+     * Should the tenant parameter be passed to the affected methods.
+     *
+     * This is useful with path or query parameter identification. The former can be handled
+     * more elegantly using UrlGeneratorBootstrapper::$addTenantParameterToDefaults.
+     *
+     * @see Stancl\Tenancy\Bootstrappers\UrlGeneratorBootstrapper
+     */
+    public static bool $passTenantParameterToRoutes = false;
+
+    /**
+     * Route name overrides.
+     *
+     * Note: This behavior can be bypassed using $bypassParameter just like
+     * $prefixRouteNames and $passTenantParameterToRoutes.
+     *
+     * Example from a Jetstream integration:
+     * [
+     *     'profile.show' => 'tenant.profile.show',
+     *     'two-factor.login' => 'tenant.two-factor.login',
+     * ]
+     *
+     * In the tenant context:
+     * - `route('profile.show')` will return a URL as if you called `route('tenant.profile.show')`.
+     * - `route('profile.show', ['central' => true])` will return a URL as if you called `route('profile.show')`.
+     */
+    public static array $overrides = [];
+
+    /**
+     * Follow the query_parameter config instead of the tenant_parameter_name (path identification) config.
+     *
+     * This only has an effect when:
+     *   - $passTenantParameterToRoutes is enabled, and
+     *   - the tenant_parameter_name config for the path resolver differs from the query_parameter config for the request data resolver.
+     *
+     * In such a case, instead of adding ['tenant' => '...'] to the route parameters (or whatever your tenant_parameter_name is if not 'tenant'),
+     * the query_parameter will be passed instead, e.g. ['team' => '...'] if your query_parameter config is 'team'.
+     *
+     * This is enabled by default because typically you will not need $passTenantParameterToRoutes with path identification.
+     * UrlGeneratorBootstrapper::$addTenantParameterToDefaults is recommended instead when using path identification.
+     *
+     * On the other hand, when using request data identification (specifically query string) you WILL need to pass the parameter
+     * directly to route() calls, therefore you would use $passTenantParameterToRoutes to avoid having to do that manually.
+     */
+    public static bool $passQueryParameter = true;
+
+    /**
+     * Override the route() method to prefix the route name before $this->routes->getByName($name) is called
+     * in the parent route() call.
+     *
+     * This is necessary because $this->routes->getByName($name) is called to retrieve the route
+     * before passing it to toRoute(). If only the prefixed route (e.g. 'tenant.foo') is registered
+     * and the original ('foo') isn't, route() would throw a RouteNotFoundException.
+     * So route() has to be overridden to prefix the passed route name, even though toRoute() is overridden already.
+     *
+     * Only the name is taken from prepareRouteInputs() here — parameter handling
+     * (adding tenant parameter, removing bypass parameter) is delegated to toRoute().
+     *
+     * Affects temporarySignedRoute() and signedRoute() as well since they call route() under the hood.
+     */
+    public function route($name, $parameters = [], $absolute = true)
+    {
+        if ($name instanceof BackedEnum && ! is_string($name = $name->value)) {
+            throw new InvalidArgumentException('Attribute [name] expects a string backed enum.');
+        }
+
+        [$name] = $this->prepareRouteInputs(Arr::wrap($parameters), $name); // @phpstan-ignore argument.type
+
+        return parent::route($name, $parameters, $absolute);
+    }
+
+    /**
+     * Override the toRoute() to prefix the route name
+     * and add the tenant parameter when in tenant context.
+     *
+     * Also affects route(). Even though route() is overridden separately, it delegates parameter handling to toRoute().
+     */
+    public function toRoute($route, $parameters, $absolute)
+    {
+        $name = $route->getName();
+
+        [$prefixedName, $parameters] = $this->prepareRouteInputs(Arr::wrap($parameters), $name);
+
+        if ($name && $prefixedName !== $name && $tenantRoute = $this->routes->getByName($prefixedName)) {
+            $route = $tenantRoute;
+        }
+
+        return parent::toRoute($route, $parameters, $absolute);
+    }
+
+    /**
+     * Return bool indicating if the bypass parameter was in $parameters.
+     */
+    protected function routeBehaviorModificationBypassed(mixed $parameters): bool
+    {
+        if (isset($parameters[static::$bypassParameter])) {
+            return (bool) $parameters[static::$bypassParameter];
+        }
+
+        return false;
+    }
+
+    /**
+     * Takes an array of parameters and a route name to return the prefixed route name
+     * and the route parameters with the tenant parameter added.
+     *
+     * To skip these modifications, pass the bypass parameter in route parameters.
+     * Before returning the modified route inputs, the bypass parameter is removed from the parameters.
+     */
+    protected function prepareRouteInputs(array $parameters, string|null $name): array
+    {
+        if (! $this->routeBehaviorModificationBypassed($parameters)) {
+            if (! is_null($name)) {
+                $name = $this->routeNameOverride($name) ?? $this->prefixRouteName($name);
+            }
+
+            $parameters = $this->addTenantParameter($parameters);
+        }
+
+        // Remove bypass parameter from the route parameters
+        unset($parameters[static::$bypassParameter]);
+
+        return [$name, $parameters];
+    }
+
+    /**
+     * If $prefixRouteNames is true, prefix the passed route name.
+     */
+    protected function prefixRouteName(string $name): string
+    {
+        $tenantPrefix = PathTenantResolver::tenantRouteNamePrefix();
+
+        if (static::$prefixRouteNames && ! str($name)->startsWith($tenantPrefix)) {
+            $name = str($name)->after($tenantPrefix)->prepend($tenantPrefix)->toString();
+        }
+
+        return $name;
+    }
+
+    /**
+     * If `tenant()` isn't null, add the tenant parameter to the passed parameters.
+     */
+    protected function addTenantParameter(array $parameters): array
+    {
+        if (tenant() && static::$passTenantParameterToRoutes) {
+            if (static::$passQueryParameter) {
+                $queryParameterName = RequestDataTenantResolver::queryParameterName();
+                if ($queryParameterName !== null) {
+                    return array_merge($parameters, [$queryParameterName => RequestDataTenantResolver::payloadValue(tenant())]);
+                }
+            }
+
+            return array_merge($parameters, [PathTenantResolver::tenantParameterName() => PathTenantResolver::tenantParameterValue(tenant())]);
+        } else {
+            return $parameters;
+        }
+    }
+
+    protected function routeNameOverride(string $name): string|null
+    {
+        return static::$overrides[$name] ?? null;
+    }
+}

@@ -1,0 +1,110 @@
+services:
+    test:
+        build:
+            context: .
+            args:
+                PHP_VERSION: ${PHP_VERSION:-8.4}
+                XDEBUG_ENABLED: ${XDEBUG_ENABLED:-false}
+        depends_on:
+            mysql:
+                condition: service_healthy
+            mysql2:
+                condition: service_healthy
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+            mssql:
+               condition: service_healthy
+            memcached:
+                condition: service_healthy
+            dynamodb:
+                condition: service_healthy
+        volumes:
+            - .:${PROJECT_PATH:-$PWD}:cached
+        working_dir: ${PROJECT_PATH:-$PWD}
+        environment:
+            DOCKER: 1
+            DB_PASSWORD: password
+            DB_USERNAME: root
+            DB_DATABASE: main
+            TENANCY_TEST_REDIS_HOST: redis
+            TENANCY_TEST_MYSQL_HOST: mysql
+            TENANCY_TEST_PGSQL_HOST: postgres
+            TENANCY_TEST_SQLSRV_HOST: mssql
+            TENANCY_TEST_SQLSRV_USERNAME: sa
+            TENANCY_TEST_SQLSRV_PASSWORD: P@ssword
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        stdin_open: true
+        tty: true
+    mysql:
+        image: mysql:8
+        environment:
+            MYSQL_ROOT_PASSWORD: password
+            MYSQL_DATABASE: main
+            MYSQL_USER: user # redundant
+            MYSQL_PASSWORD: password
+        healthcheck:
+            test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+            timeout: 10s
+            retries: 10
+        tmpfs:
+            - /var/lib/mysql
+    mysql2:
+        image: mysql:8
+        environment:
+            MYSQL_ROOT_PASSWORD: password
+            MYSQL_DATABASE: main
+            MYSQL_USER: user # redundant
+            MYSQL_PASSWORD: password
+        healthcheck:
+            test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+            timeout: 10s
+            retries: 10
+        tmpfs:
+            - /var/lib/mysql
+    postgres:
+        image: postgres:16
+        environment:
+            POSTGRES_PASSWORD: password
+            POSTGRES_USER: root # superuser name
+            POSTGRES_DB: main
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        tmpfs:
+            - /var/lib/postgresql/data
+    mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        environment:
+            ACCEPT_EULA: "Y"
+            SA_PASSWORD: "P@ssword" # must be the same as TENANCY_TEST_SQLSRV_PASSWORD
+        healthcheck: # https://github.com/Microsoft/mssql-docker/issues/133#issuecomment-1995615432
+            test: timeout 2 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/1433'
+            interval: 10s
+            timeout: 10s
+            retries: 10
+    redis:
+        image: redis:alpine
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 1s
+            timeout: 3s
+            retries: 20
+    memcached:
+        image: memcached:alpine
+        healthcheck:
+            test: ["CMD-SHELL", "echo version | nc localhost 11211 | grep -q VERSION"]
+            interval: 1s
+            timeout: 3s
+            retries: 20
+    dynamodb:
+        image: amazon/dynamodb-local:latest
+        healthcheck:
+            test: ["CMD-SHELL", "cat < /dev/null > /dev/tcp/127.0.0.1/8000"]
+            interval: 1s
+            timeout: 3s
+            retries: 20

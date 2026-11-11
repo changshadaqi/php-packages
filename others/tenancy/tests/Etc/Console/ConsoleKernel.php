@@ -1,0 +1,20 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Stancl\Tenancy\Tests\Etc\Console;
+
+use Orchestra\Testbench\Foundation\Console\Kernel;
+
+class ConsoleKernel extends Kernel
+{
+    protected $commands = [
+        ExampleCommand::class,
+        AnotherExampleCommand::class,
+        ExampleQuestionCommand::class,
+        AddUserCommand::class,
+        FailingTenantAwareCommand::class,
+        IsolatableTenantAwareCommand::class,
+        ExitCodeCommand::class,
+    ];
+}
