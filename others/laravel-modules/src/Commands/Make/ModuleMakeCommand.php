@@ -30,7 +30,7 @@ class ModuleMakeCommand extends Command implements PromptsForMissingInput
      *
      * @var string
      */
-    protected $description = 'Create a new module.';
+    protected $description = 'Create a new module.新建模块';
 
     /**
      * Execute the console command.
